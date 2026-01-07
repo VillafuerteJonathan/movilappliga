@@ -1,0 +1,16 @@
+miMovilLDP/
+├── src/
+│   ├── config/
+│   │   ├── api.js
+│   ├── screens/
+│   │   ├── LoginScreen.js
+│   ├── services/
+│   │   ├── api.js
+│   │   ├── auth.service.js
+│   ├── types/
+│   │   └── index.js
+│   ├── navigation/
+│   │   └── AppNavigator.js
+├── App.js
+├── package.json
+└── babel.config.js
