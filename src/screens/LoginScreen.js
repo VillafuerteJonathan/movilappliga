@@ -29,6 +29,8 @@ export default function LoginScreen({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
 
+  
+
   const validateForm = () => {
     const newErrors = {};
     
@@ -48,37 +50,43 @@ export default function LoginScreen({ navigation }) {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleLogin = async () => {
-    if (!validateForm()) return;
+ const handleLogin = async () => {
+  if (!validateForm()) return;
 
-    setLoading(true);
-    setErrors({});
+  setLoading(true);
+  setErrors({});
 
-    try {
-      const data = await login(correo, password);
-      
-      if (data.usuario.rol !== 'vocal') {
-        throw new Error('Esta aplicación es solo para vocales');
-      }
+  try {
+    const data = await login(correo, password);
 
-      // Guardar token y usuario para otros screens
-      await AsyncStorage.setItem("token", data.token);
-      await AsyncStorage.setItem("usuario", JSON.stringify(data.usuario));
-
-      // CAMBIO IMPORTANTE: Usar navigate en lugar de replace
-      navigation.navigate("CampeonatosScreen");
-    } catch (error) {
-      let errorMessage = error.message;
-      if (errorMessage.includes('401') || errorMessage.includes('credenciales')) {
-        errorMessage = "Correo o contraseña incorrectos";
-      } else if (errorMessage.includes('network')) {
-        errorMessage = "Error de conexión. Verifique su internet";
-      }
-      Alert.alert("Error", errorMessage);
-    } finally {
-      setLoading(false);
+    if (data.usuario.rol !== 'vocal') {
+      throw new Error('Esta aplicación es solo para vocales');
     }
-  };
+
+    await AsyncStorage.setItem("token", data.token);
+    await AsyncStorage.setItem("usuario", JSON.stringify(data.usuario));
+
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "CampeonatosScreen" }],
+    });
+
+  } catch (error) {
+    let errorMessage = error.message;
+    if (
+      errorMessage.includes('401') ||
+      errorMessage.toLowerCase().includes('credenciales')
+    ) {
+      errorMessage = "Correo o contraseña incorrectos";
+    } else if (errorMessage.toLowerCase().includes('network')) {
+      errorMessage = "Error de conexión. Verifique su internet";
+    }
+    Alert.alert("Error", errorMessage);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <SafeAreaView style={styles.safeArea}>

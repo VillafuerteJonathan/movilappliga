@@ -6,6 +6,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import LoginScreen from "../screens/LoginScreen";
 import CampeonatosScreen from "../screens/CampeonatosScreen";
 import PartidosScreen from "../screens/PartidosScreen";
+import RegistrarResultadoScreen from "../screens/RegistrarResultadoScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -30,7 +31,13 @@ export default function AppNavigator() {
           name="PartidosScreen" 
           component={PartidosScreen}
         />
+        <Stack.Screen 
+          name="RegistrarResultadoScreen" 
+          component={RegistrarResultadoScreen}
+        />
+         
       </Stack.Navigator>
+      
     </NavigationContainer>
   );
 }
