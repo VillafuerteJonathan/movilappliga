@@ -26,7 +26,8 @@ import {
   iniciarPartido, 
   actualizarMarcador, 
   finalizarPartido,
-  actualizarEncuentro 
+  actualizarEncuentro,
+  subirActasPartido
 } from '../services/registro.service';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -238,86 +239,111 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
     }
   };
 
-  const handleSeleccionarActas = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: true,
-        quality: 0.8,
-        selectionLimit: 2
-      });
+  // Reemplaza todo el bloque de handleSeleccionarActas con esto:
+const handleSeleccionarActas = async () => {
+  try {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      selectionLimit: 2
+    });
 
-      if (result.canceled) return;
+    if (result.canceled) return;
 
-      const nuevasActas = result.assets.map((asset, index) => ({
+    const nuevasActas = result.assets.map((asset, index) => {
+      // Determinar tipo basado en lo que ya tenemos
+      const tieneFrente = actas.some(a => a.tipo === 'frente');
+      const tieneDorso = actas.some(a => a.tipo === 'dorso');
+      
+      let tipo;
+      if (!tieneFrente) {
+        tipo = 'frente';
+      } else if (!tieneDorso) {
+        tipo = 'dorso';
+      } else {
+        tipo = index === 0 ? 'frente' : 'dorso';
+      }
+
+      return {
         uri: asset.uri,
-        name: `acta_${index === 0 ? 'frente' : 'dorso'}_${Date.now()}.jpg`,
-        type: 'image/jpeg',
+        name: `acta_${tipo}_${Date.now()}.jpg`,
+        type: asset.mimeType || 'image/jpeg',
         size: asset.fileSize,
-        tipo: index === 0 ? 'frente' : 'dorso'
-      }));
-
-      // Limitar a 2 imágenes (frente y dorso)
-      if (actas.length + nuevasActas.length > 2) {
-        Alert.alert('Límite alcanzado', 'Solo puedes subir 2 imágenes: frente y dorso del acta');
-        return;
-      }
-
-      setActas(prev => [...prev, ...nuevasActas]);
-      
-      Alert.alert(
-        'Imágenes seleccionadas',
-        `Se agregaron ${nuevasActas.length} imagen(es)`
-      );
-
-    } catch (error) {
-      console.error('Error seleccionando imágenes:', error);
-      Alert.alert('Error', 'No se pudieron seleccionar las imágenes');
-    }
-  };
-
-  const handleTomarFoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      
-      if (status !== 'granted') {
-        Alert.alert('Permiso requerido', 'Se necesita acceso a la cámara para tomar fotos');
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        quality: 0.8,
-        allowsEditing: false
-      });
-
-      if (result.canceled) return;
-
-      const nuevaActa = {
-        uri: result.assets[0].uri,
-        name: `acta_${actas.length === 0 ? 'frente' : 'dorso'}_${Date.now()}.jpg`,
-        type: 'image/jpeg',
-        size: result.assets[0].fileSize,
-        tipo: actas.length === 0 ? 'frente' : 'dorso'
+        tipo
       };
+    });
 
-      if (actas.length >= 2) {
-        Alert.alert('Límite alcanzado', 'Solo puedes subir 2 imágenes: frente y dorso del acta');
-        return;
-      }
-
-      setActas(prev => [...prev, nuevaActa]);
-      
-      Alert.alert(
-        'Foto tomada',
-        'La imagen ha sido agregada correctamente'
-      );
-
-    } catch (error) {
-      console.error('Error tomando foto:', error);
-      Alert.alert('Error', 'No se pudo tomar la foto');
+    // Limitar a 2 imágenes
+    if (actas.length + nuevasActas.length > 2) {
+      Alert.alert('Límite alcanzado', 'Solo puedes subir 2 imágenes: frente y dorso del acta');
+      return;
     }
-  };
 
+    setActas(prev => [...prev, ...nuevasActas]);
+    
+    Alert.alert(
+      'Imágenes seleccionadas',
+      `Se agregaron ${nuevasActas.length} imagen(es)`
+    );
+
+  } catch (error) {
+    console.error('Error seleccionando imágenes:', error);
+    Alert.alert('Error', 'No se pudieron seleccionar las imágenes');
+  }
+};
+
+// Y reemplaza handleTomarFoto con:
+const handleTomarFoto = async () => {
+  try {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert('Permiso requerido', 'Se necesita acceso a la cámara para tomar fotos');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      quality: 0.8,
+      allowsEditing: false
+    });
+
+    if (result.canceled) return;
+
+    // Determinar tipo
+    const tieneFrente = actas.some(a => a.tipo === 'frente');
+    const tieneDorso = actas.some(a => a.tipo === 'dorso');
+    
+    let tipo;
+    if (!tieneFrente) {
+      tipo = 'frente';
+    } else if (!tieneDorso) {
+      tipo = 'dorso';
+    } else {
+      Alert.alert('Límite alcanzado', 'Ya tienes ambas actas: frente y dorso');
+      return;
+    }
+
+    const nuevaActa = {
+      uri: result.assets[0].uri,
+      name: `acta_${tipo}_${Date.now()}.jpg`,
+      type: result.assets[0].mimeType || 'image/jpeg',
+      size: result.assets[0].fileSize,
+      tipo
+    };
+
+    setActas(prev => [...prev, nuevaActa]);
+    
+    Alert.alert(
+      'Foto tomada',
+      'La imagen ha sido agregada correctamente'
+    );
+
+  } catch (error) {
+    console.error('Error tomando foto:', error);
+    Alert.alert('Error', 'No se pudo tomar la foto');
+  }
+};
   const handleEliminarActa = (index) => {
     const nuevasActas = [...actas];
     nuevasActas.splice(index, 1);
@@ -329,106 +355,118 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
     setModalArbitrosVisible(false);
   };
 
-  const handleFinalizarPartido = async () => {
-    try {
-      // Validaciones
-      if (partido.estado !== 'en_juego') {
-        Alert.alert('Error', 'El partido debe estar en juego para finalizar');
-        return;
-      }
+ const handleFinalizarPartido = async () => {
+  try {
+    // ===============================
+    // VALIDACIONES
+    // ===============================
+    if (partido.estado !== 'en_juego') {
+      Alert.alert('Error', 'El partido debe estar en juego para finalizar');
+      return;
+    }
 
-      if (actas.length === 0) {
-        Alert.alert('Error', 'Debes subir al menos una imagen del acta para finalizar el partido');
-        return;
-      }
+   const actaFrente = actas.find(a => a.tipo === 'frente');
+  const actaDorso  = actas.find(a => a.tipo === 'dorso');
 
-      if (!arbitroSeleccionado) {
-        Alert.alert('Error', 'Debes seleccionar un árbitro principal');
-        return;
-      }
+  if (!actaFrente || !actaDorso) {
+    Alert.alert(
+      'Error',
+      'Debes subir el acta frontal y dorsal para finalizar el partido'
+    );
+    return;
+  }
 
-      const golesLocal = parseInt(marcadorLocal) || 0;
-      const golesVisitante = parseInt(marcadorVisitante) || 0;
 
-      Alert.alert(
-        'Finalizar Partido',
-        `¿Estás seguro de finalizar el partido?\n\nResultado: ${golesLocal} - ${golesVisitante}\nÁrbitro: ${arbitroSeleccionado.nombre}\n\nEsta acción no se puede deshacer.`,
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { 
-            text: 'Finalizar', 
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                setSubiendoActas(true);
+    if (!arbitroSeleccionado) {
+      Alert.alert('Error', 'Debes seleccionar un árbitro principal');
+      return;
+    }
 
-                // Obtener ID del vocal desde AsyncStorage
-                const usuarioStr = await AsyncStorage.getItem('usuario');
+    const golesLocal = parseInt(marcadorLocal, 10) || 0;
+    const golesVisitante = parseInt(marcadorVisitante, 10) || 0;
 
-                  if (!usuarioStr) {
-                    throw new Error('No se pudo identificar al usuario logueado');
-                  }
+    Alert.alert(
+      'Finalizar Partido',
+      `¿Estás seguro de finalizar el partido?\n\nResultado: ${golesLocal} - ${golesVisitante}\nÁrbitro: ${arbitroSeleccionado.nombre}\n\nEsta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Finalizar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSubiendoActas(true);
 
-                  const usuario = JSON.parse(usuarioStr);
-                  const vocalId = usuario.id_usuario;
+              // ===============================
+              // OBTENER VOCAL
+              // ===============================
+              const usuarioStr = await AsyncStorage.getItem('usuario');
 
-                if (!vocalId) {
-                  throw new Error('No se pudo identificar al vocal');
-                }
-
-                // Simular subida de actas
-                const hashesActas = await subirActas(actas);
-                const hashActa = `acta_${Date.now()}_${idPartido}`;
-
-                // Finalizar partido
-                await finalizarPartido(idPartido, {
-                  golesLocal,
-                  golesVisitante,
-                  arbitroId: arbitroSeleccionado.id_arbitro,
-                  vocalId,
-                  hashActa
-                });
-
-                Alert.alert(
-                  '¡Partido Finalizado!',
-                  'El partido ha sido registrado exitosamente en el sistema.',
-                  [
-                    { 
-                      text: 'OK', 
-                      onPress: () => {
-                        navigation.navigate('PartidosScreen', { 
-                          campeonatoId,
-                          campeonatoNombre
-                        });
-                      }
-                    }
-                  ]
-                );
-
-              } catch (error) {
-                console.error('Error finalizando partido:', error);
-                Alert.alert('Error', error.message || 'No se pudo finalizar el partido');
-              } finally {
-                setSubiendoActas(false);
+              if (!usuarioStr) {
+                throw new Error('No se pudo identificar al usuario logueado');
               }
+
+              const usuario = JSON.parse(usuarioStr);
+              const vocalId = usuario.id_usuario;
+
+              if (!vocalId) {
+                throw new Error('No se pudo identificar al vocal');
+              }
+
+              // ===============================
+              // 1️⃣ SUBIR ACTAS (REAL)
+              // ===============================
+              await subirActasPartido(idPartido, actas);
+
+              // ===============================
+              // 2️⃣ FINALIZAR PARTIDO
+              // ===============================
+              await finalizarPartido(idPartido, {
+                golesLocal,
+                golesVisitante,
+                arbitroId: arbitroSeleccionado.id_arbitro,
+                vocalId
+              });
+
+              Alert.alert(
+                '¡Partido Finalizado!',
+                'El partido ha sido registrado exitosamente en el sistema.',
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      navigation.navigate('PartidosScreen', {
+                        campeonatoId,
+                        campeonatoNombre
+                      });
+                    }
+                  }
+                ]
+              );
+
+            } catch (error) {
+              console.error('Error finalizando partido:', error);
+              Alert.alert(
+                'Error',
+                error.message || 'No se pudo finalizar el partido'
+              );
+            } finally {
+              setSubiendoActas(false);
             }
           }
-        ]
-      );
+        }
+      ]
+    );
 
-    } catch (error) {
-      console.error('Error en validación:', error);
-      Alert.alert('Error', error.message || 'No se pudo finalizar el partido');
-    }
-  };
+  } catch (error) {
+    console.error('Error en validación:', error);
+    Alert.alert(
+      'Error',
+      error.message || 'No se pudo finalizar el partido'
+    );
+  }
+};
 
-  const subirActas = async (actas) => {
-    return actas.map((acta, index) => ({
-      nombre: acta.name,
-      hash: `hash_${Date.now()}_${index}`,
-      url: acta.uri
-    }));
-  };
 
   // ========================
   // RENDER DE ESCENAS
