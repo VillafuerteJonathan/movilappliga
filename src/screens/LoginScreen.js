@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Alert,
-  StatusBar
+  StatusBar,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { login } from "../services/auth.service";

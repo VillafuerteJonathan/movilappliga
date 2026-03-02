@@ -18,9 +18,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
-import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
 import { 
   obtenerDetallePartido, 
   iniciarPartido, 
@@ -60,7 +58,7 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
   const [actas, setActas] = useState([]);
   const [subiendoActas, setSubiendoActas] = useState(false);
   
-  // Estados para árbitro (movido a registro)
+  // Estados para árbitro
   const [modalArbitrosVisible, setModalArbitrosVisible] = useState(false);
   const [arbitroSeleccionado, setArbitroSeleccionado] = useState(null);
 
@@ -71,63 +69,63 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
     cargarDetallePartido();
   }, []);
 
- const cargarDetallePartido = async () => {
-  try {
-    setLoading(true);
-    console.log('Cargando detalle del partido:', idPartido);
-    
-    const detalle = await obtenerDetallePartido(idPartido);
-    
-    if (!detalle) {
-      throw new Error('No se pudo obtener el detalle del partido');
-    }
-
-    console.log('Detalle cargado:', detalle);
-    setPartido(detalle);
-
-    // Inicializar fecha y hora si existen
-    if (detalle.fecha_encuentro) {
-      const fechaParts = detalle.fecha_encuentro.split('-');
-      if (fechaParts.length === 3) {
-        const fecha = new Date(
-          parseInt(fechaParts[0]),
-          parseInt(fechaParts[1]) - 1,
-          parseInt(fechaParts[2])
-        );
-        setFechaSeleccionada(fecha);
+  const cargarDetallePartido = async () => {
+    try {
+      setLoading(true);
+      console.log('Cargando detalle del partido:', idPartido);
+      
+      const detalle = await obtenerDetallePartido(idPartido);
+      
+      if (!detalle) {
+        throw new Error('No se pudo obtener el detalle del partido');
       }
-    }
 
-    if (detalle.hora_encuentro) {
-      const horaParts = detalle.hora_encuentro.split(':');
-      if (horaParts.length >= 2) {
-        const hora = new Date();
-        hora.setHours(parseInt(horaParts[0]), parseInt(horaParts[1]), 0);
-        setHoraSeleccionada(hora);
+      console.log('Detalle cargado:', detalle);
+      setPartido(detalle);
+
+      // Inicializar fecha y hora si existen
+      if (detalle.fecha_encuentro) {
+        const fechaParts = detalle.fecha_encuentro.split('-');
+        if (fechaParts.length === 3) {
+          const fecha = new Date(
+            parseInt(fechaParts[0]),
+            parseInt(fechaParts[1]) - 1,
+            parseInt(fechaParts[2])
+          );
+          setFechaSeleccionada(fecha);
+        }
       }
-    }
 
-    // Inicializar marcador si existe
-    if (detalle.goles_local !== null && detalle.goles_local !== undefined) {
-      setMarcadorLocal(detalle.goles_local.toString());
-    } else {
-      setMarcadorLocal('');
-    }
-    
-    if (detalle.goles_visitante !== null && detalle.goles_visitante !== undefined) {
-      setMarcadorVisitante(detalle.goles_visitante.toString());
-    } else {
-      setMarcadorVisitante('');
-    }
+      if (detalle.hora_encuentro) {
+        const horaParts = detalle.hora_encuentro.split(':');
+        if (horaParts.length >= 2) {
+          const hora = new Date();
+          hora.setHours(parseInt(horaParts[0]), parseInt(horaParts[1]), 0);
+          setHoraSeleccionada(hora);
+        }
+      }
 
-  } catch (error) {
-    console.error('Error cargando detalle:', error);
-    Alert.alert('Error', error.message || 'No se pudo cargar el detalle del partido');
-    navigation.goBack();
-  } finally {
-    setLoading(false);
-  }
-};
+      // Inicializar marcador si existe
+      if (detalle.goles_local !== null && detalle.goles_local !== undefined) {
+        setMarcadorLocal(detalle.goles_local.toString());
+      } else {
+        setMarcadorLocal('');
+      }
+      
+      if (detalle.goles_visitante !== null && detalle.goles_visitante !== undefined) {
+        setMarcadorVisitante(detalle.goles_visitante.toString());
+      } else {
+        setMarcadorVisitante('');
+      }
+
+    } catch (error) {
+      console.error('Error cargando detalle:', error);
+      Alert.alert('Error', error.message || 'No se pudo cargar el detalle del partido');
+      navigation.goBack();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -210,6 +208,91 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
     }
   };
 
+  // Función para manejar ausencia de equipo (walkover)
+  const handleEquipoNoPresenta = (tipo) => {
+    Alert.alert(
+      'Equipo no se presenta',
+      `¿Estás seguro de que el equipo ${tipo === 'local' ? 'LOCAL' : 'VISITANTE'} no se presenta?\n\nEl equipo contrario ganará 3-0 por walkover.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sí, registrar ausencia',
+          style: 'destructive',
+          onPress: () => confirmarAusencia(tipo)
+        }
+      ]
+    );
+  };
+
+  const confirmarAusencia = async (tipo) => {
+    try {
+      // Validaciones
+      if (partido.estado !== 'pendiente') {
+        Alert.alert('Error', 'El partido no está pendiente');
+        return;
+      }
+
+      // Verificar que se hayan subido las actas (frente y dorso)
+      const actaFrente = actas.find(a => a.tipo === 'frente');
+      const actaDorso = actas.find(a => a.tipo === 'dorso');
+      if (!actaFrente || !actaDorso) {
+        Alert.alert('Error', 'Debes subir el acta frontal y dorsal para registrar la ausencia');
+        return;
+      }
+
+      // Verificar que haya un árbitro seleccionado
+      if (!arbitroSeleccionado) {
+        Alert.alert('Error', 'Debes seleccionar un árbitro principal');
+        return;
+      }
+
+      setSubiendoActas(true);
+
+      // Definir marcador según equipo ausente
+      let golesLocal = 0;
+      let golesVisitante = 0;
+      if (tipo === 'local') {
+        golesVisitante = 3; // walkover a favor del visitante
+      } else {
+        golesLocal = 3; // walkover a favor del local
+      }
+
+      // Obtener vocal
+      const usuarioStr = await AsyncStorage.getItem('usuario');
+      if (!usuarioStr) throw new Error('No se pudo identificar al usuario');
+      const usuario = JSON.parse(usuarioStr);
+      const vocalId = usuario.id_usuario;
+
+      // Subir actas
+      await subirActasPartido(idPartido, actas);
+
+      // Finalizar partido con marcador de walkover
+      await finalizarPartido(idPartido, {
+        golesLocal,
+        golesVisitante,
+        arbitroId: arbitroSeleccionado.id_arbitro,
+        vocalId,
+        // Podríamos enviar una nota de ausencia si el backend lo soporta
+      });
+
+      Alert.alert(
+        'Partido finalizado',
+        `Se registró la ausencia del equipo ${tipo === 'local' ? 'LOCAL' : 'VISITANTE'}.\nResultado: ${golesLocal} - ${golesVisitante}`,
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.navigate('PartidosScreen', { campeonatoId, campeonatoNombre })
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error registrando ausencia:', error);
+      Alert.alert('Error', error.message || 'No se pudo registrar la ausencia');
+    } finally {
+      setSubiendoActas(false);
+    }
+  };
+
   const handleActualizarMarcador = async () => {
     try {
       const golesLocal = parseInt(marcadorLocal) || 0;
@@ -239,20 +322,73 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
     }
   };
 
-  // Reemplaza todo el bloque de handleSeleccionarActas con esto:
-const handleSeleccionarActas = async () => {
-  try {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-      selectionLimit: 2
-    });
+  const handleSeleccionarActas = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        selectionLimit: 2
+      });
 
-    if (result.canceled) return;
+      if (result.canceled) return;
 
-    const nuevasActas = result.assets.map((asset, index) => {
-      // Determinar tipo basado en lo que ya tenemos
+      const nuevasActas = result.assets.map((asset, index) => {
+        const tieneFrente = actas.some(a => a.tipo === 'frente');
+        const tieneDorso = actas.some(a => a.tipo === 'dorso');
+        
+        let tipo;
+        if (!tieneFrente) {
+          tipo = 'frente';
+        } else if (!tieneDorso) {
+          tipo = 'dorso';
+        } else {
+          tipo = index === 0 ? 'frente' : 'dorso';
+        }
+
+        return {
+          uri: asset.uri,
+          name: `acta_${tipo}_${Date.now()}.jpg`,
+          type: asset.mimeType || 'image/jpeg',
+          size: asset.fileSize,
+          tipo
+        };
+      });
+
+      if (actas.length + nuevasActas.length > 2) {
+        Alert.alert('Límite alcanzado', 'Solo puedes subir 2 imágenes: frente y dorso del acta');
+        return;
+      }
+
+      setActas(prev => [...prev, ...nuevasActas]);
+      
+      Alert.alert(
+        'Imágenes seleccionadas',
+        `Se agregaron ${nuevasActas.length} imagen(es)`
+      );
+
+    } catch (error) {
+      console.error('Error seleccionando imágenes:', error);
+      Alert.alert('Error', 'No se pudieron seleccionar las imágenes');
+    }
+  };
+
+  const handleTomarFoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permiso requerido', 'Se necesita acceso a la cámara para tomar fotos');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+        allowsEditing: false
+      });
+
+      if (result.canceled) return;
+
       const tieneFrente = actas.some(a => a.tipo === 'frente');
       const tieneDorso = actas.some(a => a.tipo === 'dorso');
       
@@ -262,88 +398,31 @@ const handleSeleccionarActas = async () => {
       } else if (!tieneDorso) {
         tipo = 'dorso';
       } else {
-        tipo = index === 0 ? 'frente' : 'dorso';
+        Alert.alert('Límite alcanzado', 'Ya tienes ambas actas: frente y dorso');
+        return;
       }
 
-      return {
-        uri: asset.uri,
+      const nuevaActa = {
+        uri: result.assets[0].uri,
         name: `acta_${tipo}_${Date.now()}.jpg`,
-        type: asset.mimeType || 'image/jpeg',
-        size: asset.fileSize,
+        type: result.assets[0].mimeType || 'image/jpeg',
+        size: result.assets[0].fileSize,
         tipo
       };
-    });
 
-    // Limitar a 2 imágenes
-    if (actas.length + nuevasActas.length > 2) {
-      Alert.alert('Límite alcanzado', 'Solo puedes subir 2 imágenes: frente y dorso del acta');
-      return;
+      setActas(prev => [...prev, nuevaActa]);
+      
+      Alert.alert(
+        'Foto tomada',
+        'La imagen ha sido agregada correctamente'
+      );
+
+    } catch (error) {
+      console.error('Error tomando foto:', error);
+      Alert.alert('Error', 'No se pudo tomar la foto');
     }
+  };
 
-    setActas(prev => [...prev, ...nuevasActas]);
-    
-    Alert.alert(
-      'Imágenes seleccionadas',
-      `Se agregaron ${nuevasActas.length} imagen(es)`
-    );
-
-  } catch (error) {
-    console.error('Error seleccionando imágenes:', error);
-    Alert.alert('Error', 'No se pudieron seleccionar las imágenes');
-  }
-};
-
-// Y reemplaza handleTomarFoto con:
-const handleTomarFoto = async () => {
-  try {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    
-    if (status !== 'granted') {
-      Alert.alert('Permiso requerido', 'Se necesita acceso a la cámara para tomar fotos');
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 0.8,
-      allowsEditing: false
-    });
-
-    if (result.canceled) return;
-
-    // Determinar tipo
-    const tieneFrente = actas.some(a => a.tipo === 'frente');
-    const tieneDorso = actas.some(a => a.tipo === 'dorso');
-    
-    let tipo;
-    if (!tieneFrente) {
-      tipo = 'frente';
-    } else if (!tieneDorso) {
-      tipo = 'dorso';
-    } else {
-      Alert.alert('Límite alcanzado', 'Ya tienes ambas actas: frente y dorso');
-      return;
-    }
-
-    const nuevaActa = {
-      uri: result.assets[0].uri,
-      name: `acta_${tipo}_${Date.now()}.jpg`,
-      type: result.assets[0].mimeType || 'image/jpeg',
-      size: result.assets[0].fileSize,
-      tipo
-    };
-
-    setActas(prev => [...prev, nuevaActa]);
-    
-    Alert.alert(
-      'Foto tomada',
-      'La imagen ha sido agregada correctamente'
-    );
-
-  } catch (error) {
-    console.error('Error tomando foto:', error);
-    Alert.alert('Error', 'No se pudo tomar la foto');
-  }
-};
   const handleEliminarActa = (index) => {
     const nuevasActas = [...actas];
     nuevasActas.splice(index, 1);
@@ -355,118 +434,84 @@ const handleTomarFoto = async () => {
     setModalArbitrosVisible(false);
   };
 
- const handleFinalizarPartido = async () => {
-  try {
-    // ===============================
-    // VALIDACIONES
-    // ===============================
-    if (partido.estado !== 'en_juego') {
-      Alert.alert('Error', 'El partido debe estar en juego para finalizar');
-      return;
-    }
+  const handleFinalizarPartido = async () => {
+    try {
+      if (partido.estado !== 'en_juego') {
+        Alert.alert('Error', 'El partido debe estar en juego para finalizar');
+        return;
+      }
 
-   const actaFrente = actas.find(a => a.tipo === 'frente');
-  const actaDorso  = actas.find(a => a.tipo === 'dorso');
+      const actaFrente = actas.find(a => a.tipo === 'frente');
+      const actaDorso = actas.find(a => a.tipo === 'dorso');
 
-  if (!actaFrente || !actaDorso) {
-    Alert.alert(
-      'Error',
-      'Debes subir el acta frontal y dorsal para finalizar el partido'
-    );
-    return;
-  }
+      if (!actaFrente || !actaDorso) {
+        Alert.alert('Error', 'Debes subir el acta frontal y dorsal para finalizar el partido');
+        return;
+      }
 
+      if (!arbitroSeleccionado) {
+        Alert.alert('Error', 'Debes seleccionar un árbitro principal');
+        return;
+      }
 
-    if (!arbitroSeleccionado) {
-      Alert.alert('Error', 'Debes seleccionar un árbitro principal');
-      return;
-    }
+      const golesLocal = parseInt(marcadorLocal, 10) || 0;
+      const golesVisitante = parseInt(marcadorVisitante, 10) || 0;
 
-    const golesLocal = parseInt(marcadorLocal, 10) || 0;
-    const golesVisitante = parseInt(marcadorVisitante, 10) || 0;
+      Alert.alert(
+        'Finalizar Partido',
+        `¿Estás seguro de finalizar el partido?\n\nResultado: ${golesLocal} - ${golesVisitante}\nÁrbitro: ${arbitroSeleccionado.nombre}\n\nEsta acción no se puede deshacer.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Finalizar',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setSubiendoActas(true);
 
-    Alert.alert(
-      'Finalizar Partido',
-      `¿Estás seguro de finalizar el partido?\n\nResultado: ${golesLocal} - ${golesVisitante}\nÁrbitro: ${arbitroSeleccionado.nombre}\n\nEsta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Finalizar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setSubiendoActas(true);
+                const usuarioStr = await AsyncStorage.getItem('usuario');
+                if (!usuarioStr) throw new Error('No se pudo identificar al usuario');
+                const usuario = JSON.parse(usuarioStr);
+                const vocalId = usuario.id_usuario;
 
-              // ===============================
-              // OBTENER VOCAL
-              // ===============================
-              const usuarioStr = await AsyncStorage.getItem('usuario');
+                await subirActasPartido(idPartido, actas);
+                await finalizarPartido(idPartido, {
+                  golesLocal,
+                  golesVisitante,
+                  arbitroId: arbitroSeleccionado.id_arbitro,
+                  vocalId
+                });
 
-              if (!usuarioStr) {
-                throw new Error('No se pudo identificar al usuario logueado');
-              }
-
-              const usuario = JSON.parse(usuarioStr);
-              const vocalId = usuario.id_usuario;
-
-              if (!vocalId) {
-                throw new Error('No se pudo identificar al vocal');
-              }
-
-              // ===============================
-              // 1️⃣ SUBIR ACTAS (REAL)
-              // ===============================
-              await subirActasPartido(idPartido, actas);
-
-              // ===============================
-              // 2️⃣ FINALIZAR PARTIDO
-              // ===============================
-              await finalizarPartido(idPartido, {
-                golesLocal,
-                golesVisitante,
-                arbitroId: arbitroSeleccionado.id_arbitro,
-                vocalId
-              });
-
-              Alert.alert(
-                '¡Partido Finalizado!',
-                'El partido ha sido registrado exitosamente en el sistema.',
-                [
-                  {
-                    text: 'OK',
-                    onPress: () => {
-                      navigation.navigate('PartidosScreen', {
+                Alert.alert(
+                  '¡Partido Finalizado!',
+                  'El partido ha sido registrado exitosamente.',
+                  [
+                    {
+                      text: 'OK',
+                      onPress: () => navigation.navigate('PartidosScreen', {
                         campeonatoId,
                         campeonatoNombre
-                      });
+                      })
                     }
-                  }
-                ]
-              );
+                  ]
+                );
 
-            } catch (error) {
-              console.error('Error finalizando partido:', error);
-              Alert.alert(
-                'Error',
-                error.message || 'No se pudo finalizar el partido'
-              );
-            } finally {
-              setSubiendoActas(false);
+              } catch (error) {
+                console.error('Error finalizando partido:', error);
+                Alert.alert('Error', error.message || 'No se pudo finalizar el partido');
+              } finally {
+                setSubiendoActas(false);
+              }
             }
           }
-        }
-      ]
-    );
+        ]
+      );
 
-  } catch (error) {
-    console.error('Error en validación:', error);
-    Alert.alert(
-      'Error',
-      error.message || 'No se pudo finalizar el partido'
-    );
-  }
-};
-
+    } catch (error) {
+      console.error('Error en validación:', error);
+      Alert.alert('Error', error.message || 'No se pudo finalizar el partido');
+    }
+  };
 
   // ========================
   // RENDER DE ESCENAS
@@ -656,10 +701,11 @@ const handleTomarFoto = async () => {
         </Text>
       </View>
 
-      {/* Iniciar partido (solo si está pendiente) */}
+      {/* Primer paso: iniciar partido o registrar ausencia (solo si está pendiente) */}
       {partido?.estado === 'pendiente' && (
         <View style={styles.actionSection}>
           <Text style={styles.sectionTitle}>PRIMER PASO</Text>
+          
           <TouchableOpacity 
             style={[styles.actionButton, styles.iniciarButton]}
             onPress={handleIniciarPartido}
@@ -674,6 +720,28 @@ const handleTomarFoto = async () => {
               </Text>
             </View>
           </TouchableOpacity>
+
+          <Text style={styles.sectionSubtitle}>O si un equipo no se presenta:</Text>
+          
+          <View style={styles.ausenciaButtons}>
+            <TouchableOpacity 
+              style={[styles.ausenciaButton, styles.ausenciaLocal]}
+              onPress={() => handleEquipoNoPresenta('local')}
+              disabled={subiendoActas}
+            >
+              <MaterialCommunityIcons name="home-off" size={20} color="#FFF" />
+              <Text style={styles.ausenciaButtonText}>Local no se presenta</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.ausenciaButton, styles.ausenciaVisitante]}
+              onPress={() => handleEquipoNoPresenta('visitante')}
+              disabled={subiendoActas}
+            >
+              <MaterialCommunityIcons name="map-marker-off" size={20} color="#FFF" />
+              <Text style={styles.ausenciaButtonText}>Visitante no se presenta</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -742,8 +810,8 @@ const handleTomarFoto = async () => {
         </View>
       )}
 
-      {/* Subir actas (solo si está en juego) */}
-      {partido?.estado === 'en_juego' && (
+      {/* Subir actas (solo si está en juego o pendiente para walkover) */}
+      {(partido?.estado === 'en_juego' || partido?.estado === 'pendiente') && (
         <View style={styles.actionSection}>
           <Text style={styles.sectionTitle}>ACTA DEL PARTIDO</Text>
           <Text style={styles.actasDescription}>
@@ -1370,6 +1438,39 @@ const styles = StyleSheet.create({
   // Action sections
   actionSection: {
     padding: 15,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: '#666',
+    marginVertical: 10,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  ausenciaButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  ausenciaButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 15,
+    borderRadius: 10,
+    marginHorizontal: 5,
+  },
+  ausenciaLocal: {
+    backgroundColor: '#F44336', // rojo
+  },
+  ausenciaVisitante: {
+    backgroundColor: '#FF9800', // naranja
+  },
+  ausenciaButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   actionButton: {
     backgroundColor: '#2E7D32',

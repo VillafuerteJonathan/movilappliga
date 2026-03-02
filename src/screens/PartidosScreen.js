@@ -24,32 +24,22 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
 
-// Definir constantes fuera del componente
+// Función para obtener nombre del campeonato de forma robusta
+const obtenerNombreCampeonato = (campeonato) => {
+  return campeonato?.nombre || 
+         campeonato?.nombre_campeonato || 
+         campeonato?.campeonato_nombre || 
+         campeonato?.nom_campeonato || 
+         campeonato?.descripcion || 
+         `Campeonato #${campeonato?.id_campeonato || '?'}`;
+};
+
+// Estados disponibles para filtros
 const ESTADOS_DISPONIBLES = [
-  { 
-    id: 'todos', 
-    label: 'Todos', 
-    icon: 'format-list-bulleted',
-    color: '#2E7D32'
-  },
-  { 
-    id: 'pendiente', 
-    label: 'Pendientes', 
-    icon: 'clock-outline',
-    color: '#FF9800'
-  },
-  { 
-    id: 'en_juego', 
-    label: 'En Juego', 
-    icon: 'play-circle-outline',
-    color: '#2196F3'
-  },
-  { 
-    id: 'finalizado', 
-    label: 'Finalizados', 
-    icon: 'check-circle-outline',
-    color: '#666'
-  }
+  { id: 'todos', label: 'Todos', icon: 'format-list-bulleted', color: '#2E7D32' },
+  { id: 'pendiente', label: 'Pendientes', icon: 'clock-outline', color: '#FF9800' },
+  { id: 'en_juego', label: 'En Juego', icon: 'play-circle-outline', color: '#2196F3' },
+  { id: 'finalizado', label: 'Finalizados', icon: 'check-circle-outline', color: '#666' }
 ];
 
 const TIPOS_EQUIPO = [
@@ -64,7 +54,7 @@ const PartidosScreen = ({ navigation, route }) => {
   const [campeonatos, setCampeonatos] = useState([]);
   const [campeonatoSeleccionado, setCampeonatoSeleccionado] = useState(null);
   const [partidos, setPartidos] = useState([]);
-  const [partidosOriginales, setPartidosOriginales] = useState([]); // Guardar todos los partidos
+  const [partidosOriginales, setPartidosOriginales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalFiltrosVisible, setModalFiltrosVisible] = useState(false);
@@ -131,20 +121,20 @@ const PartidosScreen = ({ navigation, route }) => {
       console.log('=== CARGANDO CAMPEONATOS ===');
       setLoading(true);
       const data = await obtenerCampeonatosActivos();
-      console.log('Campeonatos obtenidos:', data.length);
+      console.log('Datos de campeonatos:', JSON.stringify(data, null, 2)); // <-- Ver estructura
       setCampeonatos(data);
       
       if (campeonatoId) {
         const campeonato = data.find(c => c.id_campeonato === campeonatoId);
         if (campeonato) {
-          console.log('Campeonato encontrado por ID:', campeonato.nombre);
+          console.log('Campeonato encontrado por ID:', obtenerNombreCampeonato(campeonato));
           setCampeonatoSeleccionado(campeonato);
         } else if (data.length > 0) {
-          console.log('Campeonato no encontrado, seleccionando primero:', data[0].nombre);
+          console.log('Campeonato no encontrado, seleccionando primero:', obtenerNombreCampeonato(data[0]));
           setCampeonatoSeleccionado(data[0]);
         }
       } else if (data.length > 0) {
-        console.log('Seleccionando primer campeonato:', data[0].nombre);
+        console.log('Seleccionando primer campeonato:', obtenerNombreCampeonato(data[0]));
         setCampeonatoSeleccionado(data[0]);
       } else {
         console.log('No hay campeonatos disponibles');
@@ -161,7 +151,7 @@ const PartidosScreen = ({ navigation, route }) => {
     if (!campeonatoSeleccionado) return;
 
     try {
-      console.log('=== CARGANDO PARTIDOS ===', campeonatoSeleccionado.nombre);
+      console.log('=== CARGANDO PARTIDOS ===', obtenerNombreCampeonato(campeonatoSeleccionado));
       setLoading(true);
       setRefreshing(false);
 
@@ -169,10 +159,7 @@ const PartidosScreen = ({ navigation, route }) => {
 
       console.log('Partidos recibidos:', response.partidos.length);
       
-      // Guardar todos los partidos (sin filtrar)
       setPartidosOriginales(response.partidos || []);
-      
-      // Aplicar filtros iniciales
       aplicarFiltrosEnFrontend(response.partidos || []);
       
     } catch (error) {
@@ -239,7 +226,6 @@ const PartidosScreen = ({ navigation, route }) => {
   const aplicarFiltrosDesdeModal = () => {
     setFiltroTextoAplicado(filtroTexto.trim());
     setModalFiltrosVisible(false);
-    // Los filtros se aplicarán automáticamente por el useEffect
   };
 
   const handleLimpiarTodosFiltros = () => {
@@ -260,8 +246,6 @@ const PartidosScreen = ({ navigation, route }) => {
     try {
       console.log('=== NAVEGANDO A REGISTRAR RESULTADO ===');
       console.log('ID Partido:', item.id_partido);
-      console.log('Equipo Local:', item.local_nombre);
-      console.log('Equipo Visitante:', item.visitante_nombre);
       
       if (!item.id_partido) {
         console.error('ERROR: item.id_partido es undefined o null');
@@ -269,8 +253,6 @@ const PartidosScreen = ({ navigation, route }) => {
         return;
       }
 
-      // Primero cargar el detalle del partido
-      console.log('Cargando detalle del partido...');
       const detalle = await obtenerDetallePartido(item.id_partido);
       
       if (!detalle) {
@@ -278,13 +260,6 @@ const PartidosScreen = ({ navigation, route }) => {
         return;
       }
 
-      console.log('Detalle cargado:', {
-        id: detalle.id_partido,
-        estado: detalle.estado,
-        ya_registrado: detalle.ya_registrado
-      });
-
-      // Verificar si el partido ya está registrado
       if (detalle.ya_registrado) {
         Alert.alert(
           'Partido ya registrado',
@@ -294,7 +269,6 @@ const PartidosScreen = ({ navigation, route }) => {
         return;
       }
 
-      // Verificar si el partido está disponible para registro
       if (detalle.estado !== 'pendiente' && detalle.estado !== 'en_juego') {
         Alert.alert(
           'Partido no disponible',
@@ -304,20 +278,16 @@ const PartidosScreen = ({ navigation, route }) => {
         return;
       }
 
-      // Navegar con todos los datos necesarios
       navigation.navigate('RegistrarResultadoScreen', { 
         idPartido: item.id_partido,
         campeonatoId: campeonatoSeleccionado?.id_campeonato,
-        campeonatoNombre: campeonatoSeleccionado?.nombre,
-        partido: detalle // Enviar el detalle completo
+        campeonatoNombre: obtenerNombreCampeonato(campeonatoSeleccionado),
+        partido: detalle
       });
 
     } catch (error) {
       console.error('Error al navegar a registro:', error);
-      Alert.alert(
-        'Error',
-        error.message || 'No se pudo cargar el detalle del partido'
-      );
+      Alert.alert('Error', error.message || 'No se pudo cargar el detalle del partido');
     }
   };
 
@@ -488,7 +458,7 @@ const PartidosScreen = ({ navigation, route }) => {
             <MaterialCommunityIcons name="trophy" size={20} color="#2E7D32" />
             <View style={styles.campeonatoInfo}>
               <Text style={styles.campeonatoNombre} numberOfLines={1}>
-                {campeonatoSeleccionado?.nombre || 'Seleccionar campeonato'}
+                {obtenerNombreCampeonato(campeonatoSeleccionado) || 'Seleccionar campeonato'}
               </Text>
               <Text style={styles.campeonatoDetalle}>
                 {campeonatoSeleccionado?.categoria || 'Categoría'} • {campeonatoSeleccionado?.temporada || 'Temporada'}
@@ -559,16 +529,6 @@ const PartidosScreen = ({ navigation, route }) => {
             )}
           </View>
           <Text style={styles.filtrosButtonText}>FILTROS</Text>
-          {(filtroTextoAplicado.length > 0 || grupoSeleccionado !== 'todos' || filtroEstado !== 'todos' || filtroTipoEquipo !== 'todos') && (
-            <View style={styles.filtrosActivosMini}>
-              <Text style={styles.filtrosActivosMiniText}>
-                {filtroTextoAplicado.length > 0 ? '1' : ''}
-                {grupoSeleccionado !== 'todos' ? '1' : ''}
-                {filtroEstado !== 'todos' ? '1' : ''}
-                {filtroTipoEquipo !== 'todos' ? '1' : ''} activos
-              </Text>
-            </View>
-          )}
         </View>
       </TouchableOpacity>
 
@@ -671,7 +631,6 @@ const PartidosScreen = ({ navigation, route }) => {
   const renderFooter = () => {
     if (loading || partidos.length === 0) return null;
     
-    // Contar partidos por estado
     const enJuegoCount = partidos.filter(p => p.estado === 'en_juego').length;
     const pendienteCount = partidos.filter(p => p.estado === 'pendiente').length;
     const finalizadoCount = partidos.filter(p => p.estado === 'finalizado').length;
@@ -754,7 +713,7 @@ const PartidosScreen = ({ navigation, route }) => {
               Gestión de Partidos
             </Text>
             <Text style={styles.topBarSubtitle}>
-              {campeonatoSeleccionado?.nombre || ''}
+              {obtenerNombreCampeonato(campeonatoSeleccionado) || ''}
             </Text>
           </View>
           <TouchableOpacity 
@@ -789,7 +748,7 @@ const PartidosScreen = ({ navigation, route }) => {
         />
       </SafeAreaView>
 
-      {/* Modal de selección de campeonato */}
+      {/* Modal de selección de campeonato (mejorado) */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -811,69 +770,79 @@ const PartidosScreen = ({ navigation, route }) => {
               </TouchableOpacity>
             </View>
             
-            <ScrollView>
-              {campeonatos.map((campeonato) => (
-                <TouchableOpacity
-                  key={campeonato.id_campeonato}
-                  style={[
-                    styles.campeonatoModalItem,
-                    campeonatoSeleccionado?.id_campeonato === campeonato.id_campeonato && 
-                    styles.campeonatoModalItemSelected
-                  ]}
-                  onPress={() => {
-                    setCampeonatoSeleccionado(campeonato);
-                    setModalCampeonatosVisible(false);
-                    handleLimpiarTodosFiltros();
-                  }}
-                >
-                  <View style={styles.campeonatoModalIcon}>
-                    <MaterialCommunityIcons 
-                      name="trophy" 
-                      size={20} 
-                      color={campeonatoSeleccionado?.id_campeonato === campeonato.id_campeonato ? '#FFF' : '#2E7D32'} 
-                    />
-                  </View>
-                  <View style={styles.campeonatoModalInfo}>
-                    <Text style={[
-                      styles.campeonatoModalText,
-                      campeonatoSeleccionado?.id_campeonato === campeonato.id_campeonato && 
-                      styles.campeonatoModalTextSelected
-                    ]}>
-                      {campeonato.nombre}
-                    </Text>
-                    <View style={styles.campeonatoModalDetails}>
+            <ScrollView style={styles.modalScrollView}>
+              {campeonatos.map((campeonato) => {
+                const nombre = obtenerNombreCampeonato(campeonato);
+                const seleccionado = campeonatoSeleccionado?.id_campeonato === campeonato.id_campeonato;
+                return (
+                  <TouchableOpacity
+                    key={campeonato.id_campeonato}
+                    style={[
+                      styles.campeonatoModalItem,
+                      seleccionado && styles.campeonatoModalItemSelected
+                    ]}
+                    onPress={() => {
+                      setCampeonatoSeleccionado(campeonato);
+                      setModalCampeonatosVisible(false);
+                      handleLimpiarTodosFiltros();
+                    }}
+                  >
+                    <View style={styles.campeonatoModalIcon}>
+                      <MaterialCommunityIcons 
+                        name="trophy" 
+                        size={24} 
+                        color={seleccionado ? '#FFFFFF' : '#2E7D32'} 
+                      />
+                    </View>
+                    <View style={styles.campeonatoModalInfo}>
                       <Text style={[
-                        styles.campeonatoModalSubtext,
-                        campeonatoSeleccionado?.id_campeonato === campeonato.id_campeonato && 
-                        styles.campeonatoModalSubtextSelected
-                      ]}>
-                        {campeonato.categoria} • {campeonato.temporada}
+                        styles.campeonatoModalText,
+                        seleccionado && styles.campeonatoModalTextSelected
+                      ]} numberOfLines={2}>
+                        {nombre}
                       </Text>
-                      <View style={styles.campeonatoModalStats}>
-                        <MaterialCommunityIcons name="soccer" size={12} color={campeonatoSeleccionado?.id_campeonato === campeonato.id_campeonato ? '#FFF' : '#666'} />
+                      <View style={styles.campeonatoModalDetails}>
                         <Text style={[
-                          styles.campeonatoModalStatsText,
-                          campeonatoSeleccionado?.id_campeonato === campeonato.id_campeonato && 
-                          styles.campeonatoModalStatsTextSelected
+                          styles.campeonatoModalSubtext,
+                          seleccionado && styles.campeonatoModalSubtextSelected
                         ]}>
-                          {campeonato.partidos_pendientes || 0} partidos
+                          {campeonato.categoria || 'Categoría'} • {campeonato.temporada || 'Temporada'}
                         </Text>
+                        <View style={styles.campeonatoModalStats}>
+                          <MaterialCommunityIcons 
+                            name="soccer" 
+                            size={14} 
+                            color={seleccionado ? '#FFFFFF' : '#666'} 
+                          />
+                          <Text style={[
+                            styles.campeonatoModalStatsText,
+                            seleccionado && styles.campeonatoModalStatsTextSelected
+                          ]}>
+                            {campeonato.partidos_pendientes || 0} partidos
+                          </Text>
+                        </View>
                       </View>
                     </View>
-                  </View>
-                  {campeonatoSeleccionado?.id_campeonato === campeonato.id_campeonato && (
-                    <View style={styles.campeonatoModalCheck}>
-                      <MaterialCommunityIcons name="check-circle" size={20} color="#FFF" />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
+                    {seleccionado && (
+                      <View style={styles.campeonatoModalCheck}>
+                        <MaterialCommunityIcons name="check-circle" size={24} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+              {campeonatos.length === 0 && (
+                <View style={styles.modalEmpty}>
+                  <MaterialCommunityIcons name="trophy-outline" size={50} color="#E0E0E0" />
+                  <Text style={styles.modalEmptyText}>No hay campeonatos disponibles</Text>
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* Modal de filtros */}
+      {/* Modal de filtros (se mantiene igual) */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -1009,7 +978,7 @@ const PartidosScreen = ({ navigation, route }) => {
                         styles.modalGridText,
                         grupoSeleccionado === grupo && styles.modalGridTextSelected
                       ]}>
-                        {grupo === 'todos' ? 'Todos' : ` ${grupo}`}
+                        {grupo === 'todos' ? 'Todos' : `Grupo ${grupo}`}
                       </Text>
                       {grupo !== 'todos' && (
                         <View style={[
@@ -1057,11 +1026,7 @@ const PartidosScreen = ({ navigation, route }) => {
   );
 };
 
-// Los estilos se mantienen exactamente igual
-// ... (todos los estilos permanecen igual que en tu código original)
-
-
-// Los estilos se mantienen igual...
+// Estilos (se mantienen los mismos, solo se añaden algunos nuevos para el modal mejorado)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1137,35 +1102,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 3,
-  },
-  actualizacionContainer: {
-    backgroundColor: '#E3F2FD',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 15,
-    alignItems: 'center',
-  },
-  actualizarButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 25,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#BBDEFB',
-  },
-  actualizarButtonText: {
-    color: '#2196F3',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  actualizacionInfo: {
-    fontSize: 11,
-    color: '#1976D2',
-    fontStyle: 'italic',
   },
   campeonatoSection: {
     marginBottom: 15,
@@ -1278,18 +1214,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     letterSpacing: 1,
-  },
-  filtrosActivosMini: {
-    marginLeft: 8,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  filtrosActivosMiniText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '600',
   },
   filtrosActivosContainer: {
     backgroundColor: "#F8F9FA",
@@ -1426,23 +1350,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
-    position: 'relative',
-  },
-  pulsoAnimado: {
-    position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(33, 150, 243, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    left: 8,
-  },
-  pulsoInterno: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#2196F3',
   },
   estadoTexto: {
     fontSize: 12,
@@ -1838,6 +1745,7 @@ const styles = StyleSheet.create({
   modalGridCountTextSelected: {
     color: '#FFFFFF',
   },
+  // Nuevos estilos para el modal de campeonatos mejorado
   campeonatoModalItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1847,6 +1755,7 @@ const styles = StyleSheet.create({
   },
   campeonatoModalItemSelected: {
     backgroundColor: '#2E7D32',
+    
   },
   campeonatoModalIcon: {
     marginRight: 12,
@@ -1889,6 +1798,15 @@ const styles = StyleSheet.create({
   },
   campeonatoModalCheck: {
     marginLeft: 12,
+  },
+  modalEmpty: {
+    alignItems: 'center',
+    padding: 30,
+  },
+  modalEmptyText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#999',
   },
   modalFooter: {
     flexDirection: 'row',
