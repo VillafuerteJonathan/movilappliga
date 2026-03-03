@@ -124,6 +124,37 @@
 };
 
 /* ===============================
+   REGISTRAR INASISTENCIA (sin hash)
+=============================== */
+export const registrarInasistencia = async (
+  idPartido,
+  equipoQueNoAsistio,
+  vocalId,
+  arbitroId
+) => {
+  if (!idPartido) {
+    throw new Error("ID de partido requerido");
+  }
+  if (!['local', 'visitante'].includes(equipoQueNoAsistio)) {
+    throw new Error("Debe indicar 'local' o 'visitante'");
+  }
+  if (!vocalId || !arbitroId) {
+    throw new Error("Debe proporcionar vocal y árbitro");
+  }
+
+  return await fetchConToken(
+    `/registro/partidos/${idPartido}/inasistencia`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        equipoQueNoAsistio,
+        vocalId,
+        arbitroId
+      })
+    }
+  );
+};
+/* ===============================
    SUBIR ACTAS DEL PARTIDO
 =============================== */
 export const subirActasPartido = async (idPartido, actas) => {

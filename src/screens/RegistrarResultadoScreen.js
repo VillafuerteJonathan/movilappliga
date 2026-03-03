@@ -25,7 +25,8 @@ import {
   actualizarMarcador, 
   finalizarPartido,
   actualizarEncuentro,
-  subirActasPartido
+  subirActasPartido,
+  registrarInasistencia
 } from '../services/registro.service';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -61,6 +62,9 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
   // Estados para árbitro
   const [modalArbitrosVisible, setModalArbitrosVisible] = useState(false);
   const [arbitroSeleccionado, setArbitroSeleccionado] = useState(null);
+
+  // Estado para el tipo de ausencia seleccionado
+  const [tipoAusenciaSeleccionado, setTipoAusenciaSeleccionado] = useState(null); // 'local' o 'visitante'
 
   const scrollViewRef = useRef();
 
@@ -208,54 +212,12 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
     }
   };
 
-  // Función para manejar ausencia de equipo (walkover)
-  const handleEquipoNoPresenta = (tipo) => {
-    Alert.alert(
-      'Equipo no se presenta',
-      `¿Estás seguro de que el equipo ${tipo === 'local' ? 'LOCAL' : 'VISITANTE'} no se presenta?\n\nEl equipo contrario ganará 3-0 por walkover.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Sí, registrar ausencia',
-          style: 'destructive',
-          onPress: () => confirmarAusencia(tipo)
-        }
-      ]
-    );
-  };
+  // Función para registrar la inasistencia (walkover)
+  const handleRegistrarInasistencia = async () => {
+    if (!tipoAusenciaSeleccionado) return;
 
-  const confirmarAusencia = async (tipo) => {
     try {
-      // Validaciones
-      if (partido.estado !== 'pendiente') {
-        Alert.alert('Error', 'El partido no está pendiente');
-        return;
-      }
-
-      // Verificar que se hayan subido las actas (frente y dorso)
-      const actaFrente = actas.find(a => a.tipo === 'frente');
-      const actaDorso = actas.find(a => a.tipo === 'dorso');
-      if (!actaFrente || !actaDorso) {
-        Alert.alert('Error', 'Debes subir el acta frontal y dorsal para registrar la ausencia');
-        return;
-      }
-
-      // Verificar que haya un árbitro seleccionado
-      if (!arbitroSeleccionado) {
-        Alert.alert('Error', 'Debes seleccionar un árbitro principal');
-        return;
-      }
-
       setSubiendoActas(true);
-
-      // Definir marcador según equipo ausente
-      let golesLocal = 0;
-      let golesVisitante = 0;
-      if (tipo === 'local') {
-        golesVisitante = 3; // walkover a favor del visitante
-      } else {
-        golesLocal = 3; // walkover a favor del local
-      }
 
       // Obtener vocal
       const usuarioStr = await AsyncStorage.getItem('usuario');
@@ -266,25 +228,31 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
       // Subir actas
       await subirActasPartido(idPartido, actas);
 
-      // Finalizar partido con marcador de walkover
-      await finalizarPartido(idPartido, {
-        golesLocal,
-        golesVisitante,
-        arbitroId: arbitroSeleccionado.id_arbitro,
+      // Llamar al endpoint de inasistencia
+      await registrarInasistencia(
+        idPartido,
+        tipoAusenciaSeleccionado,
         vocalId,
-        // Podríamos enviar una nota de ausencia si el backend lo soporta
-      });
+        arbitroSeleccionado.id_arbitro
+      );
+
+      const equipoAusente = tipoAusenciaSeleccionado === 'local' ? partido.local_nombre : partido.visitante_nombre;
+      const resultado = tipoAusenciaSeleccionado === 'local' ? '0-3' : '3-0';
 
       Alert.alert(
-        'Partido finalizado',
-        `Se registró la ausencia del equipo ${tipo === 'local' ? 'LOCAL' : 'VISITANTE'}.\nResultado: ${golesLocal} - ${golesVisitante}`,
+        'Partido finalizado por ausencia',
+        `Se registró la ausencia del equipo ${equipoAusente}.\nResultado: ${resultado}`,
         [
           {
             text: 'OK',
-            onPress: () => navigation.navigate('PartidosScreen', { campeonatoId, campeonatoNombre })
+            onPress: () => navigation.navigate('PartidosScreen', { 
+              campeonatoId, 
+              campeonatoNombre 
+            })
           }
         ]
       );
+
     } catch (error) {
       console.error('Error registrando ausencia:', error);
       Alert.alert('Error', error.message || 'No se pudo registrar la ausencia');
@@ -322,43 +290,42 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
     }
   };
 
+  // Función corregida para seleccionar actas (asigna frente/dorso correctamente)
   const handleSeleccionarActas = async () => {
     try {
+      const maxSeleccion = 2 - actas.length;
+      if (maxSeleccion <= 0) {
+        Alert.alert('Límite alcanzado', 'Ya tienes las dos actas necesarias');
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,
         quality: 0.8,
-        selectionLimit: 2
+        selectionLimit: maxSeleccion
       });
 
       if (result.canceled) return;
 
+      // Determinar qué tipos faltan
+      const tiposDisponibles = [];
+      if (!actas.some(a => a.tipo === 'frente')) tiposDisponibles.push('frente');
+      if (!actas.some(a => a.tipo === 'dorso')) tiposDisponibles.push('dorso');
+
       const nuevasActas = result.assets.map((asset, index) => {
-        const tieneFrente = actas.some(a => a.tipo === 'frente');
-        const tieneDorso = actas.some(a => a.tipo === 'dorso');
-        
-        let tipo;
-        if (!tieneFrente) {
-          tipo = 'frente';
-        } else if (!tieneDorso) {
-          tipo = 'dorso';
-        } else {
-          tipo = index === 0 ? 'frente' : 'dorso';
+        // Si hay más imágenes que tipos disponibles, se ignoran (pero selectionLimit ya lo controla)
+        if (index < tiposDisponibles.length) {
+          return {
+            uri: asset.uri,
+            name: `acta_${tiposDisponibles[index]}_${Date.now()}.jpg`,
+            type: asset.mimeType || 'image/jpeg',
+            size: asset.fileSize,
+            tipo: tiposDisponibles[index]
+          };
         }
-
-        return {
-          uri: asset.uri,
-          name: `acta_${tipo}_${Date.now()}.jpg`,
-          type: asset.mimeType || 'image/jpeg',
-          size: asset.fileSize,
-          tipo
-        };
-      });
-
-      if (actas.length + nuevasActas.length > 2) {
-        Alert.alert('Límite alcanzado', 'Solo puedes subir 2 imágenes: frente y dorso del acta');
-        return;
-      }
+        return null;
+      }).filter(a => a !== null);
 
       setActas(prev => [...prev, ...nuevasActas]);
       
@@ -382,6 +349,11 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
         return;
       }
 
+      if (actas.length >= 2) {
+        Alert.alert('Límite alcanzado', 'Ya tienes ambas actas: frente y dorso');
+        return;
+      }
+
       const result = await ImagePicker.launchCameraAsync({
         quality: 0.8,
         allowsEditing: false
@@ -389,17 +361,10 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
 
       if (result.canceled) return;
 
-      const tieneFrente = actas.some(a => a.tipo === 'frente');
-      const tieneDorso = actas.some(a => a.tipo === 'dorso');
-      
-      let tipo;
-      if (!tieneFrente) {
-        tipo = 'frente';
-      } else if (!tieneDorso) {
+      // Determinar tipo según lo que falte
+      let tipo = 'frente';
+      if (actas.some(a => a.tipo === 'frente')) {
         tipo = 'dorso';
-      } else {
-        Alert.alert('Límite alcanzado', 'Ya tienes ambas actas: frente y dorso');
-        return;
       }
 
       const nuevaActa = {
@@ -701,10 +666,10 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
         </Text>
       </View>
 
-      {/* Primer paso: iniciar partido o registrar ausencia (solo si está pendiente) */}
-      {partido?.estado === 'pendiente' && (
+      {/* Si el partido está pendiente y no se ha seleccionado ausencia, mostrar opciones */}
+      {partido?.estado === 'pendiente' && !tipoAusenciaSeleccionado && (
         <View style={styles.actionSection}>
-          <Text style={styles.sectionTitle}>PRIMER PASO</Text>
+          <Text style={styles.sectionTitle}>SELECCIONA UNA OPCIÓN</Text>
           
           <TouchableOpacity 
             style={[styles.actionButton, styles.iniciarButton]}
@@ -726,8 +691,7 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
           <View style={styles.ausenciaButtons}>
             <TouchableOpacity 
               style={[styles.ausenciaButton, styles.ausenciaLocal]}
-              onPress={() => handleEquipoNoPresenta('local')}
-              disabled={subiendoActas}
+              onPress={() => setTipoAusenciaSeleccionado('local')}
             >
               <MaterialCommunityIcons name="home-off" size={20} color="#FFF" />
               <Text style={styles.ausenciaButtonText}>Local no se presenta</Text>
@@ -735,13 +699,164 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
 
             <TouchableOpacity 
               style={[styles.ausenciaButton, styles.ausenciaVisitante]}
-              onPress={() => handleEquipoNoPresenta('visitante')}
-              disabled={subiendoActas}
+              onPress={() => setTipoAusenciaSeleccionado('visitante')}
             >
               <MaterialCommunityIcons name="map-marker-off" size={20} color="#FFF" />
               <Text style={styles.ausenciaButtonText}>Visitante no se presenta</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      {/* Si se seleccionó un tipo de ausencia, mostrar el flujo de registro */}
+      {partido?.estado === 'pendiente' && tipoAusenciaSeleccionado && (
+        <View style={styles.actionSection}>
+          <View style={styles.seleccionHeader}>
+            <Text style={styles.sectionTitle}>
+              AUSENCIA SELECCIONADA: {tipoAusenciaSeleccionado === 'local' ? partido.local_nombre : partido.visitante_nombre}
+            </Text>
+            <TouchableOpacity onPress={() => setTipoAusenciaSeleccionado(null)}>
+              <MaterialCommunityIcons name="close" size={20} color="#666" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Subir actas */}
+          <Text style={styles.sectionTitle}>ACTA DEL PARTIDO</Text>
+          <Text style={styles.actasDescription}>
+            Sube 2 imágenes del acta firmada: FRENTE y DORSO
+          </Text>
+          
+          <View style={styles.actasButtonsContainer}>
+            <TouchableOpacity 
+              style={[styles.actaButton, styles.galleryButton]}
+              onPress={handleSeleccionarActas}
+              disabled={subiendoActas || actas.length >= 2}
+            >
+              <MaterialCommunityIcons name="image-multiple" size={24} color="#9C27B0" />
+              <Text style={styles.actaButtonText}>Galería</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.actaButton, styles.cameraButton]}
+              onPress={handleTomarFoto}
+              disabled={subiendoActas || actas.length >= 2}
+            >
+              <MaterialCommunityIcons name="camera" size={24} color="#2196F3" />
+              <Text style={styles.actaButtonText}>Cámara</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Lista de actas subidas */}
+          {actas.length > 0 && (
+            <View style={styles.actasList}>
+              <Text style={styles.actasListTitle}>Imágenes del acta ({actas.length}/2):</Text>
+              <View style={styles.actasGrid}>
+                {actas.map((acta, index) => (
+                  <View key={index} style={styles.actaItem}>
+                    <View style={styles.actaImageContainer}>
+                      <Image 
+                        source={{ uri: acta.uri }} 
+                        style={styles.actaImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.actaBadge}>
+                        <Text style={styles.actaBadgeText}>
+                          {acta.tipo === 'frente' ? 'FRENTE' : 'DORSO'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity 
+                        onPress={() => handleEliminarActa(index)}
+                        style={styles.actaDeleteButton}
+                      >
+                        <MaterialCommunityIcons name="close-circle" size={22} color="#FFF" />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.actaInfo}>
+                      <Text style={styles.actaNombre} numberOfLines={1}>
+                        {acta.tipo === 'frente' ? 'Acta (Frente)' : 'Acta (Dorso)'}
+                      </Text>
+                      <Text style={styles.actaSize}>
+                        {(acta.size / 1024).toFixed(0)} KB
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Seleccionar árbitro */}
+          {actas.length > 0 && (
+            <View style={styles.arbitroSection}>
+              <Text style={styles.sectionTitle}>ÁRBITRO PRINCIPAL</Text>
+              
+              <View style={styles.arbitroCard}>
+                {arbitroSeleccionado ? (
+                  <View style={styles.arbitroSeleccionado}>
+                    <MaterialCommunityIcons name="account-check" size={24} color="#2E7D32" />
+                    <View style={styles.arbitroInfo}>
+                      <Text style={styles.arbitroNombre}>{arbitroSeleccionado.nombre}</Text>
+                      <Text style={styles.arbitroLabel}>Árbitro seleccionado</Text>
+                    </View>
+                    <TouchableOpacity 
+                      onPress={() => setModalArbitrosVisible(true)}
+                      style={styles.cambiarArbitroButton}
+                    >
+                      <MaterialCommunityIcons name="pencil" size={18} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity 
+                    style={styles.seleccionarArbitroButton}
+                    onPress={() => setModalArbitrosVisible(true)}
+                  >
+                    <MaterialCommunityIcons name="account-search" size={24} color="#2E7D32" />
+                    <View style={styles.arbitroButtonContent}>
+                      <Text style={styles.seleccionarArbitroText}>SELECCIONAR ÁRBITRO</Text>
+                      <Text style={styles.seleccionarArbitroSubtext}>
+                        Requerido para finalizar el partido
+                      </Text>
+                    </View>
+                    <MaterialCommunityIcons name="chevron-right" size={20} color="#666" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Botón para registrar inasistencia */}
+          {actas.length === 2 && arbitroSeleccionado && (
+            <View style={styles.finalizarSection}>
+              <Text style={styles.sectionTitle}>REGISTRAR AUSENCIA</Text>
+              
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.finalizarButton]}
+                onPress={handleRegistrarInasistencia}
+                disabled={subiendoActas}
+              >
+                <View style={styles.actionButtonIcon}>
+                  <MaterialCommunityIcons name="flag-checkered" size={28} color="#FFF" />
+                </View>
+                <View style={styles.actionButtonContent}>
+                  <Text style={styles.actionButtonText}>
+                    {subiendoActas ? 'REGISTRANDO...' : 'REGISTRAR INASISTENCIA'}
+                  </Text>
+                  <Text style={styles.actionButtonSubtext}>
+                    {tipoAusenciaSeleccionado === 'local' 
+                      ? `${partido.local_nombre} no se presenta` 
+                      : `${partido.visitante_nombre} no se presenta`}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.warningBox}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={20} color="#FF9800" />
+                <Text style={styles.warningText}>
+                  Al registrar la ausencia, el partido quedará finalizado con marcador 3-0 a favor del equipo presente. Esta acción no se puede deshacer.
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
       )}
 
@@ -810,8 +925,8 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
         </View>
       )}
 
-      {/* Subir actas (solo si está en juego o pendiente para walkover) */}
-      {(partido?.estado === 'en_juego' || partido?.estado === 'pendiente') && (
+      {/* Subir actas para partido en juego (no aplica para ausencia porque ya está en pendiente) */}
+      {partido?.estado === 'en_juego' && (
         <View style={styles.actionSection}>
           <Text style={styles.sectionTitle}>ACTA DEL PARTIDO</Text>
           <Text style={styles.actasDescription}>
@@ -877,7 +992,7 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
             </View>
           )}
 
-          {/* Seleccionar árbitro (solo si hay actas subidas) */}
+          {/* Seleccionar árbitro */}
           {actas.length > 0 && (
             <View style={styles.arbitroSection}>
               <Text style={styles.sectionTitle}>ÁRBITRO PRINCIPAL</Text>
@@ -916,8 +1031,8 @@ const RegistrarResultadoScreen = ({ navigation, route }) => {
             </View>
           )}
 
-          {/* Finalizar partido (solo si está en juego, tiene actas y árbitro) */}
-          {partido?.estado === 'en_juego' && actas.length > 0 && arbitroSeleccionado && (
+          {/* Finalizar partido */}
+          {partido?.estado === 'en_juego' && actas.length === 2 && arbitroSeleccionado && (
             <View style={styles.finalizarSection}>
               <Text style={styles.sectionTitle}>FINALIZAR PARTIDO</Text>
               
@@ -1753,6 +1868,13 @@ const styles = StyleSheet.create({
     color: '#FF9800',
     marginLeft: 8,
     lineHeight: 16,
+  },
+  // Selección de ausencia
+  seleccionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
   },
   // Finalizado container
   finalizadoContainer: {
